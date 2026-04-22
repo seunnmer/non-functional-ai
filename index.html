@@ -595,4 +595,68 @@ qs('nextBtn').addEventListener('click', nextAction);
 ['pj1','pj2','pj3'].forEach(id=>clampPercentInput(qs(id))); clampMinutesInput(qs('pj4')); clampAgeInput(qs('demoAge'));
 renderLikert('pk1','pk1'); renderLikert('pk2','pk2'); renderLikert('prejol','prejol'); renderLikert('manipHelp','manipHelp'); renderChoiceGrid('manipMethod','manipMethod',['문제를 풀고, ChatGPT와 상호작용할 수 있었다.','문제를 풀고, AI 힌트의 도움을 받을 수 있었다.','문제를 풀고, 힌트의 도움을 받을 수 있었다.']); document.querySelectorAll('input[name="manipMethod"]').forEach(inp=>inp.addEventListener('change', ()=>{ syncChoice('manipMethod'); updateNextButton(); })); syncChoice('manipMethod'); buildAIL();
 document.addEventListener('DOMContentLoaded', ()=>{ showScreen(getCurrentScreenId()); updateNextButton(); });
-</script></body></html>
+</script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+const SUPABASE_URL = "https://aplbtiqxpjwrbmlfbpvc.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_VJr_wkau0Qb0zgu_mbDgyA_Y6wLBzSf";
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+async function sendDataToSupabase(){
+  try{
+    if(typeof window.getCollectedData !== 'function'){
+      console.error('getCollectedData 함수를 찾을 수 없습니다.');
+      return;
+    }
+    const data = window.getCollectedData();
+
+    const payload = {
+      participant_id: data.participantId || null,
+      condition: data.condition || null,
+      started_at: data.startedAt || null,
+      completed_at: new Date().toISOString()
+    };
+
+    const { error } = await supabaseClient
+      .from('participants')
+      .insert([payload]);
+
+    if(error){
+      console.error('❌ Supabase 저장 실패:', error);
+    }else{
+      console.log('✅ Supabase 저장 성공');
+    }
+  }catch(err){
+    console.error('❌ Supabase 저장 중 예외 발생:', err);
+  }
+}
+</script>
+
+
+<script>
+(function(){
+  let supabaseSubmitted = false;
+
+  function maybeSubmitToSupabase(){
+    if(supabaseSubmitted) return;
+    const endScreen = document.querySelector('.end-screen, #screen-end, [data-screen="end"], [data-stage="end"]');
+    const endText = document.body && document.body.innerText ? document.body.innerText : '';
+    const endVisible = endScreen ? getComputedStyle(endScreen).display !== 'none' : false;
+    const endMessageVisible = endText.includes('실험이 모두 종료되었습니다');
+    if(endVisible || endMessageVisible){
+      supabaseSubmitted = true;
+      sendDataToSupabase();
+    }
+  }
+
+  window.addEventListener('load', () => {
+    const observer = new MutationObserver(() => {
+      maybeSubmitToSupabase();
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    maybeSubmitToSupabase();
+  });
+})();
+</script>
+
+</body></html>
