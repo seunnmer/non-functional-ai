@@ -187,7 +187,7 @@ let currentMath = null;
 
 const participantId = 'P_' + Date.now() + '_' + Math.floor(Math.random()*100000);
 const studyData = {
-  version:'odca_nonfunctional_ai_demo_416_v20_data',
+  version:'odca_nonfunctional_ai_demo_416_v22_supabase_full',
   participantId,
   condition:'Non-functional AI',
   startedAt:new Date().toISOString(),
@@ -209,11 +209,22 @@ const studyData = {
   manipulation:{ submittedAt:null, method:null, helpfulness:null },
   aiLiteracy:{ submittedAt:null, items:{} },
   demographics:{ submittedAt:null, age:null, gender:null, major:null },
+  clientMeta:{
+    userAgent:navigator.userAgent || null,
+    language:navigator.language || null,
+    platform:navigator.platform || null,
+    timezone:(Intl.DateTimeFormat && Intl.DateTimeFormat().resolvedOptions().timeZone) || null,
+    referrer:document.referrer || null,
+    pageUrl:location.href || null,
+    screen:{ width:window.screen?.width || null, height:window.screen?.height || null },
+    viewport:{ width:window.innerWidth || null, height:window.innerHeight || null }
+  },
+  submission:{ status:'not_submitted', attemptedAt:null, submittedAt:null, error:null, retryCount:0 },
   completedAt:null
 };
 window.studyData = studyData;
 
-function saveState(){ localStorage.setItem('nonFunctionalAIDemo_v19_data', JSON.stringify(studyData)); }
+function saveState(){ studyData.lastSavedAt = new Date().toISOString(); if(studyData.clientMeta && studyData.clientMeta.viewport){ studyData.clientMeta.viewport = { width:window.innerWidth || null, height:window.innerHeight || null }; } localStorage.setItem('nonFunctionalAIDemo_v22_data', JSON.stringify(studyData)); }
 function qs(id){ return document.getElementById(id); }
 function cloneData(){ return JSON.parse(JSON.stringify(studyData)); }
 window.getCollectedData = cloneData;
@@ -596,67 +607,174 @@ qs('nextBtn').addEventListener('click', nextAction);
 renderLikert('pk1','pk1'); renderLikert('pk2','pk2'); renderLikert('prejol','prejol'); renderLikert('manipHelp','manipHelp'); renderChoiceGrid('manipMethod','manipMethod',['문제를 풀고, ChatGPT와 상호작용할 수 있었다.','문제를 풀고, AI 힌트의 도움을 받을 수 있었다.','문제를 풀고, 힌트의 도움을 받을 수 있었다.']); document.querySelectorAll('input[name="manipMethod"]').forEach(inp=>inp.addEventListener('change', ()=>{ syncChoice('manipMethod'); updateNextButton(); })); syncChoice('manipMethod'); buildAIL();
 document.addEventListener('DOMContentLoaded', ()=>{ showScreen(getCurrentScreenId()); updateNextButton(); });
 </script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
 <script>
-const SUPABASE_URL = "https://aplbtiqxpjwrbmlfbpvc.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_VJr_wkau0Qb0zgu_mbDgyA_Y6wLBzSf";
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_URL = "https://aplbtqixpjwrbmlfbpvc.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_VJr_wkau0Qb0zgu_mbDgyA_Y6wLBzSf";
+const SUPABASE_TABLE = "experiment_responses";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
-async function sendDataToSupabase(){
+function safeNumber(value){
+  if(value === '' || value === null || typeof value === 'undefined') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function updateClientMeta(){
+  if(!studyData.clientMeta) studyData.clientMeta = {};
+  studyData.clientMeta.userAgent = navigator.userAgent || null;
+  studyData.clientMeta.language = navigator.language || null;
+  studyData.clientMeta.platform = navigator.platform || null;
+  studyData.clientMeta.timezone = (Intl.DateTimeFormat && Intl.DateTimeFormat().resolvedOptions().timeZone) || null;
+  studyData.clientMeta.referrer = document.referrer || null;
+  studyData.clientMeta.pageUrl = location.href || null;
+  studyData.clientMeta.screen = { width: window.screen?.width || null, height: window.screen?.height || null };
+  studyData.clientMeta.viewport = { width: window.innerWidth || null, height: window.innerHeight || null };
+}
+
+function countCorrectFromStateItems(items){
+  let total = 0;
+  let correct = 0;
+  Object.values(items || {}).forEach(item => {
+    const correctness = item && item.correctness ? item.correctness : {};
+    Object.values(correctness).forEach(v => {
+      total += 1;
+      if(v === true) correct += 1;
+    });
+  });
+  return { total, correct, accuracy: total ? correct / total : null };
+}
+
+function countHintsUsed(){
+  return Object.values(studyData.learning?.sets || {}).reduce((sum, setState) => sum + (setState?.hintUsed || 0), 0);
+}
+
+function buildDerivedSummary(data){
+  const learningStats = countCorrectFromStateItems(data.learning?.sets || {});
+  const finalStats = countCorrectFromStateItems(data.finalTest?.items || {});
+  const finalMemoryItems = Object.values(data.finalTest?.items || {}).filter(item => item.kind === 'memory');
+  const finalTransferItems = Object.values(data.finalTest?.items || {}).filter(item => item.kind === 'transfer');
+  const memoryStats = countCorrectFromStateItems(Object.fromEntries(finalMemoryItems.map(item => [item.testId, item])));
+  const transferStats = countCorrectFromStateItems(Object.fromEntries(finalTransferItems.map(item => [item.testId, item])));
+
+  return {
+    participantId: data.participantId,
+    condition: data.condition,
+    version: data.version,
+    startedAt: data.startedAt || null,
+    completedAt: data.completedAt || null,
+    totalLearningTimeMs: data.learning?.totalTimeMs || 0,
+    totalFinalTestTimeMs: data.finalTest?.totalTimeMs || 0,
+    totalHintsUsed: countHintsUsed(),
+    learningCorrectCount: learningStats.correct,
+    learningQuestionCount: learningStats.total,
+    learningAccuracy: learningStats.accuracy,
+    finalCorrectCount: finalStats.correct,
+    finalQuestionCount: finalStats.total,
+    finalAccuracy: finalStats.accuracy,
+    finalMemoryCorrectCount: memoryStats.correct,
+    finalMemoryQuestionCount: memoryStats.total,
+    finalMemoryAccuracy: memoryStats.accuracy,
+    finalTransferCorrectCount: transferStats.correct,
+    finalTransferQuestionCount: transferStats.total,
+    finalTransferAccuracy: transferStats.accuracy,
+    priorKnowledge1: safeNumber(data.preSurvey?.priorKnowledge1),
+    priorKnowledge2: safeNumber(data.preSurvey?.priorKnowledge2),
+    preJOL: safeNumber(data.preSurvey?.preJOL),
+    postLearnedPercent: safeNumber(data.postJOL?.learnedPercent),
+    postReviewNeededPercent: safeNumber(data.postJOL?.reviewNeededPercent),
+    postTestPredictionPercent: safeNumber(data.postJOL?.testPredictionPercent),
+    postMoreStudyMinutes: safeNumber(data.postJOL?.moreStudyMinutes),
+    manipulationMethod: data.manipulation?.method || null,
+    manipulationHelpfulness: safeNumber(data.manipulation?.helpfulness),
+    age: safeNumber(data.demographics?.age),
+    gender: data.demographics?.gender || null,
+    major: data.demographics?.major || null
+  };
+}
+
+function buildSupabaseRow(){
+  updateClientMeta();
+  const data = window.getCollectedData();
+  return {
+    participant_id: data.participantId,
+    condition: data.condition,
+    version: data.version,
+    started_at: data.startedAt || null,
+    completed_at: data.completedAt || new Date().toISOString(),
+    pre_survey: data.preSurvey || {},
+    learning: data.learning || {},
+    post_jol: data.postJOL || {},
+    distractor: data.distractor || {},
+    final_test: data.finalTest || {},
+    manipulation: data.manipulation || {},
+    ai_literacy: data.aiLiteracy || {},
+    demographics: data.demographics || {},
+    client_meta: data.clientMeta || {},
+    summary: buildDerivedSummary(data),
+    raw_payload: data
+  };
+}
+
+async function sendDataToSupabase(force=false){
+  const submissionKey = `nonFunctionalAIDemo_v22_submitted_${studyData.participantId}`;
+  if(!force && localStorage.getItem(submissionKey) === '1') return { ok:true, skipped:true };
+
+  updateClientMeta();
+  studyData.submission.attemptedAt = new Date().toISOString();
+  studyData.submission.status = 'submitting';
+  studyData.submission.retryCount = (studyData.submission.retryCount || 0) + 1;
+  saveState();
+
   try{
-    if(typeof window.getCollectedData !== 'function'){
-      console.error('getCollectedData 함수를 찾을 수 없습니다.');
-      return;
-    }
-    const data = window.getCollectedData();
-
-    const payload = {
-      participant_id: data.participantId || null,
-      condition: data.condition || null,
-      started_at: data.startedAt || null,
-      completed_at: new Date().toISOString()
-    };
-
+    const row = buildSupabaseRow();
     const { error } = await supabaseClient
-      .from('participants')
-      .insert([payload]);
+      .from(SUPABASE_TABLE)
+      .upsert([row], { onConflict: 'participant_id' });
 
-    if(error){
-      console.error('❌ Supabase 저장 실패:', error);
-    }else{
-      console.log('✅ Supabase 저장 성공');
-    }
-  }catch(err){
-    console.error('❌ Supabase 저장 중 예외 발생:', err);
+    if(error) throw error;
+
+    studyData.submission.status = 'submitted';
+    studyData.submission.submittedAt = new Date().toISOString();
+    studyData.submission.error = null;
+    saveState();
+    localStorage.setItem(submissionKey, '1');
+    console.log('✅ Supabase 저장 성공');
+    return { ok:true };
+  }catch(error){
+    studyData.submission.status = 'failed';
+    studyData.submission.error = {
+      message: error?.message || String(error),
+      details: error?.details || null,
+      hint: error?.hint || null,
+      code: error?.code || null
+    };
+    saveState();
+    console.error('❌ Supabase 저장 실패:', error);
+    return { ok:false, error };
   }
 }
-</script>
 
+window.sendDataToSupabase = sendDataToSupabase;
+window.buildSupabaseRow = buildSupabaseRow;
+window.buildDerivedSummary = buildDerivedSummary;
 
-<script>
+window.addEventListener('resize', () => {
+  updateClientMeta();
+  saveState();
+});
+
 (function(){
-  let supabaseSubmitted = false;
-
-  function maybeSubmitToSupabase(){
-    if(supabaseSubmitted) return;
-    const endScreen = document.querySelector('.end-screen, #screen-end, [data-screen="end"], [data-stage="end"]');
-    const endText = document.body && document.body.innerText ? document.body.innerText : '';
-    const endVisible = endScreen ? getComputedStyle(endScreen).display !== 'none' : false;
-    const endMessageVisible = endText.includes('실험이 모두 종료되었습니다');
-    if(endVisible || endMessageVisible){
-      supabaseSubmitted = true;
-      sendDataToSupabase();
+  const nextBtn = qs('nextBtn');
+  if(!nextBtn) return;
+  nextBtn.removeEventListener('click', nextAction);
+  nextBtn.addEventListener('click', async function(){
+    const beforeScreenId = getCurrentScreenId();
+    nextAction();
+    if(beforeScreenId === 'screen-demo'){
+      await sendDataToSupabase();
     }
-  }
-
-  window.addEventListener('load', () => {
-    const observer = new MutationObserver(() => {
-      maybeSubmitToSupabase();
-    });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-    maybeSubmitToSupabase();
   });
 })();
 </script>
-
-</body></html>
+</body>
+</html>
