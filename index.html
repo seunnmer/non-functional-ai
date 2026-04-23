@@ -609,9 +609,13 @@ document.addEventListener('DOMContentLoaded', ()=>{ showScreen(getCurrentScreenI
 </script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL = "https://aplbtqixpjwrbmlfbpvc.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_VJr_wkau0Qb0zgu_mbDgyA_Y6wLBzSf";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwbGJ0cWl4cGp3cmJtbGZicHZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NDIyOTYsImV4cCI6MjA5MjQxODI5Nn0.qyj2l6RU51E1No1_lhTg6jnBID-c6APnX2rti3AUiLA";
 const SUPABASE_TABLE = "experiment_responses";
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
 
 function safeNumber(value){
   if(value === '' || value === null || typeof value === 'undefined') return null;
